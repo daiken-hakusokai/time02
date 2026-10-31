@@ -1,0 +1,392 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>横画面 時計＆タイマー</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 1画面固定。中央に巨大な数字、上下に細い操作バー（操作がないと自動で消える） */
+:root{
+  --bg:#0c0f13;
+  --panel:#161a20;
+  --line:#262c35;
+  --fg:#ece6da;
+  --muted:#7b8390;
+  --accent:#f0a23a;
+  --alert:#ff5b4f;
+  --f-num:"Barlow Condensed","Roboto Condensed","Arial Narrow",sans-serif;
+  --f-ui:"Noto Sans JP","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{height:100%;background:var(--bg)}
+body{
+  height:100%;margin:0;
+  display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:10px;
+  background:var(--bg);color:var(--fg);
+  font-family:var(--f-ui);
+  overflow:hidden;
+  -webkit-user-select:none;user-select:none;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+body.idle{cursor:none}
+
+/* ---- 上部バー ---- */
+.bar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:44px;
+  transition:opacity .4s ease;
+}
+body.idle .bar,body.idle .ctrl{opacity:0;pointer-events:none}
+.seg{
+  display:inline-flex;padding:3px;
+  background:var(--panel);border:1px solid var(--line);border-radius:999px;
+}
+.seg button{
+  all:unset;cursor:pointer;
+  padding:7px 18px;border-radius:999px;
+  font-size:15px;font-weight:500;color:var(--muted);
+  white-space:nowrap;
+}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.seg button:focus-visible,.btn:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mini{
+  font-family:var(--f-num);font-size:20px;font-weight:500;
+  font-variant-numeric:tabular-nums;color:var(--accent);
+  white-space:nowrap;
+}
+.mini small{font-family:var(--f-ui);font-size:12px;color:var(--muted);margin-right:6px;letter-spacing:.06em}
+
+/* ---- 中央 ---- */
+.stage{display:grid;place-items:center;min-height:0;min-width:0}
+.view{display:flex;flex-direction:column;align-items:center;gap:1.6vh;min-width:0}
+.num{
+  font-family:var(--f-num);font-weight:700;
+  font-variant-numeric:tabular-nums;
+  line-height:.82;white-space:nowrap;
+  color:var(--fg);
+}
+.num .c{color:var(--accent);position:relative;top:-.05em;margin:0 .01em}
+
+#clockNum{font-size:min(27vw,62vh)}
+.date{
+  font-size:min(3.6vw,5.4vh);font-weight:700;letter-spacing:.08em;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+
+.status{font-size:min(2.6vw,4.2vh);font-weight:700;letter-spacing:.12em;color:var(--muted);white-space:nowrap}
+#timerNum{font-size:min(40vw,50vh)}
+#timerNum.long{font-size:min(25vw,50vh)}
+#timerNum .sign{color:var(--alert)}
+.prog{align-self:stretch;height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.prog i{display:block;height:100%;width:100%;background:var(--accent);transform-origin:left;transition:transform .25s linear}
+.presets{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+body.running .presets{visibility:hidden}
+.chip{
+  all:unset;cursor:pointer;
+  padding:6px 14px;border-radius:999px;
+  border:1px solid var(--line);color:var(--fg);
+  font-size:14px;white-space:nowrap;
+}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+
+body.ringing #timerNum{color:var(--alert)}
+body.ringing .prog i{background:var(--alert)}
+@media (prefers-reduced-motion:no-preference){
+  body.ringing #timerNum{animation:flash 1s steps(2,jump-none) infinite}
+}
+@keyframes flash{50%{opacity:.25}}
+
+.hint{
+  display:none;
+  font-size:13px;color:var(--muted);text-align:center;
+  word-break:auto-phrase;text-wrap:balance;
+}
+@media (orientation:portrait){ .hint{display:block} }
+
+/* ---- 下部操作 ---- */
+.ctrl{
+  display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:8px;
+  min-height:44px;transition:opacity .4s ease;
+}
+.btn{
+  all:unset;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:9px 14px;border-radius:12px;
+  background:var(--panel);border:1px solid var(--line);
+  font-size:15px;color:var(--fg);white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.btn:active{transform:translateY(1px)}
+.btn.primary{
+  min-width:7.5em;padding:9px 26px;
+  background:var(--accent);border-color:var(--accent);
+  color:var(--bg);font-weight:700;
+}
+body.ringing .btn.primary{background:var(--alert);border-color:var(--alert)}
+.btn.ghost{background:transparent}
+</style>
+
+<header class="bar">
+  <div class="seg" role="group" aria-label="表示切り替え">
+    <button id="tabClock" type="button" aria-pressed="true">時計</button>
+    <button id="tabTimer" type="button" aria-pressed="false">タイマー</button>
+  </div>
+  <span class="mini" id="mini" hidden><small>タイマー</small><span id="miniVal">05:00</span></span>
+  <button class="btn ghost" id="fsBtn" type="button">全画面</button>
+</header>
+
+<main class="stage" id="stage">
+  <section class="view" id="clockView">
+    <div class="num" id="clockNum">12<span class="c">:</span>00<span class="c">:</span>00</div>
+    <div class="date" id="clockDate">2026年10月31日（土）</div>
+    <p class="hint">スマホを横向きにすると、<wbr>画面いっぱいに表示されます</p>
+  </section>
+
+  <section class="view" id="timerView" hidden>
+    <div class="status" id="status">セット</div>
+    <div class="num" id="timerNum">05<span class="c">:</span>00</div>
+    <div class="prog" aria-hidden="true"><i id="progBar"></i></div>
+    <div class="presets" id="presets"></div>
+  </section>
+</main>
+
+<footer class="ctrl" id="ctrl" hidden>
+  <button class="btn" type="button" data-adj="-60000" id="m60">−1分</button>
+  <button class="btn" type="button" data-adj="-10000" id="m10">−10秒</button>
+  <button class="btn primary" type="button" id="mainBtn">スタート</button>
+  <button class="btn" type="button" data-adj="10000" id="p10">＋10秒</button>
+  <button class="btn" type="button" data-adj="60000" id="p60">＋1分</button>
+  <button class="btn ghost" type="button" id="resetBtn">リセット</button>
+</footer>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const body = document.body;
+  const store = {
+    get(k,d){ try{ const v = localStorage.getItem(k); return v===null ? d : JSON.parse(v); }catch(e){ return d; } },
+    set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  };
+  const pad = n => String(n).padStart(2,'0');
+  const colon = '<span class="c">:</span>';
+  const WEEK = ['日','月','火','水','木','金','土'];
+  const MAX = 99*3600*1000;
+
+  /* ---------- 状態 ---------- */
+  let mode = store.get('mode','clock');
+  let setMs = store.get('setMs', 5*60*1000);
+  let state = 'idle';              // idle | running | paused | done
+  let remain = setMs, total = setMs, endAt = 0, doneAt = 0;
+
+  /* ---------- 時計 ---------- */
+  function renderClock(now){
+    $('clockNum').innerHTML = pad(now.getHours()) + colon + pad(now.getMinutes()) + colon + pad(now.getSeconds());
+    $('clockDate').textContent =
+      now.getFullYear()+'年'+(now.getMonth()+1)+'月'+now.getDate()+'日（'+WEEK[now.getDay()]+'）';
+  }
+
+  /* ---------- タイマー ---------- */
+  function fmt(sec){
+    const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = sec%60;
+    return h>0 ? { html: h+colon+pad(m)+colon+pad(s), long:true, text:h+':'+pad(m)+':'+pad(s) }
+               : { html: pad(m)+colon+pad(s), long:false, text:pad(m)+':'+pad(s) };
+  }
+  function currentRemain(){
+    if(state==='running') return Math.max(0, endAt - Date.now());
+    return remain;
+  }
+  function renderTimer(){
+    const el = $('timerNum');
+    let f;
+    if(state==='done'){
+      f = fmt(Math.floor((Date.now()-doneAt)/1000));
+      el.innerHTML = '<span class="sign">+</span>'+f.html;
+      $('progBar').style.transform = 'scaleX(1)';
+    }else{
+      const r = currentRemain();
+      f = fmt(Math.ceil(r/1000));
+      el.innerHTML = f.html;
+      $('progBar').style.transform = 'scaleX('+(total>0 ? Math.min(1,r/total) : 0)+')';
+    }
+    el.classList.toggle('long', f.long);
+    $('miniVal').textContent = (state==='done' ? '+' : '') + f.text;
+
+    $('status').textContent =
+      {idle:'セット',running:'残り',paused:'一時停止中',done:'時間です'}[state];
+    $('mainBtn').textContent =
+      {idle:'スタート',running:'一時停止',paused:'再開',done:'止める'}[state];
+    body.classList.toggle('running', state==='running' || state==='done');
+    body.classList.toggle('ringing', state==='done');
+    $('mini').hidden = !(mode==='clock' && state!=='idle');
+    document.querySelectorAll('.chip').forEach(c=>{
+      c.setAttribute('aria-pressed', String(state==='idle' && +c.dataset.ms===setMs));
+    });
+  }
+
+  function start(){
+    ensureAudio();
+    if(state==='done'){ stopRing(); state='idle'; remain=setMs; total=setMs; }
+    else if(state==='running'){ remain = Math.max(0,endAt-Date.now()); state='paused'; }
+    else if(remain>0){ endAt = Date.now()+remain; state='running'; }
+    renderTimer(); poke();
+  }
+  function reset(){
+    stopRing(); state='idle'; remain=setMs; total=setMs; renderTimer(); poke();
+  }
+  function adjust(d){
+    if(state==='done') return;
+    if(state==='running'){
+      const r = Math.min(MAX, Math.max(0, endAt-Date.now()+d));
+      endAt = Date.now()+r; total = Math.max(r, total+d);
+    }else{
+      remain = Math.min(MAX, Math.max(0, remain+d));
+      if(state==='idle'){ setMs = remain; total = remain; store.set('setMs',setMs); }
+      else total = Math.max(remain, total+d);
+    }
+    renderTimer();
+  }
+  function setPreset(ms){
+    stopRing(); state='idle'; setMs=ms; remain=ms; total=ms; store.set('setMs',ms); renderTimer();
+  }
+
+  /* プリセット */
+  [1,3,5,10,15,30,60].forEach(min=>{
+    const b = document.createElement('button');
+    b.type='button'; b.className='chip'; b.id='preset'+min;
+    b.dataset.ms = String(min*60000);
+    b.textContent = min===60 ? '1時間' : min+'分';
+    b.addEventListener('click', ()=>setPreset(min*60000));
+    $('presets').appendChild(b);
+  });
+
+  /* ---------- アラーム音 ---------- */
+  let ac = null, ringIv = null, ringStop = null;
+  function ensureAudio(){
+    try{
+      if(!ac) ac = new (window.AudioContext||window.webkitAudioContext)();
+      if(ac.state==='suspended') ac.resume();
+    }catch(e){}
+  }
+  function beep(){
+    if(!ac) return;
+    const t = ac.currentTime;
+    [0,.2,.4].forEach(d=>{
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type='sine'; o.frequency.value = 880;
+      g.gain.setValueAtTime(.0001,t+d);
+      g.gain.exponentialRampToValueAtTime(.35,t+d+.015);
+      g.gain.exponentialRampToValueAtTime(.0001,t+d+.15);
+      o.connect(g); g.connect(ac.destination);
+      o.start(t+d); o.stop(t+d+.16);
+    });
+    try{ navigator.vibrate && navigator.vibrate([150,80,150]); }catch(e){}
+  }
+  function startRing(){
+    beep();
+    ringIv = setInterval(beep, 1500);
+    ringStop = setTimeout(()=>{ clearInterval(ringIv); ringIv=null; }, 60000);
+  }
+  function stopRing(){
+    clearInterval(ringIv); clearTimeout(ringStop); ringIv=null; ringStop=null;
+  }
+
+  /* ---------- モード切り替え ---------- */
+  function setMode(m){
+    mode = m; store.set('mode',m);
+    $('clockView').hidden = m!=='clock';
+    $('timerView').hidden = m!=='timer';
+    $('ctrl').hidden = m!=='timer';
+    $('tabClock').setAttribute('aria-pressed', String(m==='clock'));
+    $('tabTimer').setAttribute('aria-pressed', String(m==='timer'));
+    renderTimer(); poke();
+  }
+  $('tabClock').addEventListener('click', ()=>setMode('clock'));
+  $('tabTimer').addEventListener('click', ()=>setMode('timer'));
+
+  /* 左右スワイプでも切り替え */
+  let sx=null, sy=null;
+  $('stage').addEventListener('touchstart', e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; }, {passive:true});
+  $('stage').addEventListener('touchend', e=>{
+    if(sx===null) return;
+    const dx = e.changedTouches[0].clientX-sx, dy = e.changedTouches[0].clientY-sy;
+    if(Math.abs(dx)>70 && Math.abs(dy)<60) setMode(mode==='clock' ? 'timer' : 'clock');
+    sx=null;
+  }, {passive:true});
+
+  /* ---------- ボタン ---------- */
+  $('mainBtn').addEventListener('click', start);
+  $('resetBtn').addEventListener('click', reset);
+  document.querySelectorAll('[data-adj]').forEach(b=>{
+    b.addEventListener('click', ()=>adjust(+b.dataset.adj));
+  });
+
+  /* キーボード（PC用） */
+  document.addEventListener('keydown', e=>{
+    if(e.key===' ' && mode==='timer'){ e.preventDefault(); start(); }
+    else if(e.key==='c') setMode('clock');
+    else if(e.key==='t') setMode('timer');
+    else if(e.key==='f') toggleFs();
+    poke();
+  });
+
+  /* ---------- 全画面・スリープ防止 ---------- */
+  const fsOK = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  if(!fsOK) $('fsBtn').hidden = true;
+  function toggleFs(){
+    const d = document, el = d.documentElement;
+    try{
+      if(d.fullscreenElement || d.webkitFullscreenElement){
+        (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+      }else{
+        const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+        if(p && p.then) p.then(()=>{
+          try{ screen.orientation.lock('landscape').catch(()=>{}); }catch(e){}
+        }).catch(()=>{});
+      }
+    }catch(e){}
+  }
+  $('fsBtn').addEventListener('click', toggleFs);
+  const fsLabel = ()=>{ $('fsBtn').textContent = (document.fullscreenElement||document.webkitFullscreenElement) ? '全画面を終了' : '全画面'; };
+  document.addEventListener('fullscreenchange', fsLabel);
+  document.addEventListener('webkitfullscreenchange', fsLabel);
+
+  let lock = null;
+  async function keepAwake(){
+    try{ if('wakeLock' in navigator && !lock){ lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release',()=>{ lock=null; }); } }catch(e){}
+  }
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') keepAwake(); });
+
+  /* ---------- 操作バーの自動非表示 ---------- */
+  let idleT = null;
+  function poke(){
+    body.classList.remove('idle');
+    clearTimeout(idleT);
+    idleT = setTimeout(()=>{
+      if(mode==='clock' || state==='running') body.classList.add('idle');
+    }, 4000);
+  }
+  document.addEventListener('pointerdown', ()=>{ poke(); keepAwake(); ensureAudio(); });
+  document.addEventListener('pointermove', e=>{ if(e.pointerType==='mouse') poke(); });
+
+  /* ---------- ループ ---------- */
+  function tick(){
+    if(state==='running' && Date.now()>=endAt){
+      state='done'; doneAt=endAt; remain=0;
+      setMode('timer'); startRing();
+    }
+    renderClock(new Date());
+    renderTimer();
+  }
+  setMode(mode === 'timer' ? 'timer' : 'clock');
+  tick();
+  setInterval(tick, 200);
+  keepAwake();
+})();
+</script>
+
+</body></html>
